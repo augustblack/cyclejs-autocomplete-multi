@@ -17,3 +17,5 @@ node_modules
 lib/*
 public/bundle.js
 public/bundle.js.map
+dist/bundle.js
+dist/bundle.js.map
