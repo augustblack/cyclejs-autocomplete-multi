@@ -1,37 +1,43 @@
-var webpack = require('webpack');
 var path = require('path');
-/*
- */
+var webpack = require('webpack');
+
+var ENV = process.env.NODE_ENV;
 
 module.exports = {
-  entry: [
-    'webpack-dev-server/client?http://0.0.0.0:8080', // WebpackDevServer host and port
-    'webpack/hot/only-dev-server',
-    './src/autocomplete.js' // Your appʼs entry point
-  ],
-  devtool: process.env.WEBPACK_DEVTOOL || 'source-map',
+  entry: ( ENV == 'production' ?
+           ['./main']
+           :
+           [
+            'webpack-dev-server/client?http://localhost:8080',
+            'webpack/hot/dev-server',
+            './main'
+           ]
+  ),
   output: {
-    path: path.join(__dirname, 'public'),
-    filename: 'bundle.js'
-  },
-  resolve: {
-    extensions: ['', '.js', '.jsx']
+    filename: './dist/bundle.js'
   },
   module: {
-    loaders: [{
-      test: /\.js$/,
-      exclude: /(node_modules|bower_components)/,
-      loaders: ['babel'],
-    }]
+    loaders: [
+      {
+        test: /\.js$/,
+        loaders: ['babel'],
+        include: __dirname,
+        exclude: /node_modules/
+      }
+    ]
   },
+  plugins: ( ENV == 'production' ?
+             [
+              new webpack.optimize.UglifyJsPlugin({minimize: true}),
+             ]
+             :
+             [
+               new webpack.HotModuleReplacementPlugin()
+             ]
+  ),
   devServer: {
-      contentBase: "./public",
-      noInfo: true, //  --no-info option
-      hot: true,
-      inline: true
-  },
-  plugins: [
-    new webpack.HotModuleReplacementPlugin(),
-    new webpack.NoErrorsPlugin()
-  ]
+    historyApiFallback: true,
+    contentBase: './',
+    hot: true
+  }
 };
