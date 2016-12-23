@@ -13,19 +13,19 @@ const model = (ac1$, ac2$) =>  {
 }
 
 const view = (state$, ac1DOM, ac2DOM) =>  {
-	return xs.combine( state$,ac1DOM, ac2DOM)
+  return xs.combine( state$,ac1DOM, ac2DOM)
   .map( ([state,ac1vtree, ac2vtree]) =>{
     return div([
       ac1vtree,
       ac2vtree,
       pre(JSON.stringify(state, null,2))
     ])
-	})
+  })
 }
 
 const main = ( sources ) =>{
-	const ac1 = Autocomplete(sources)
-	const ac2 = Autocomplete(sources)
+  const ac1 = Autocomplete(sources)
+  const ac2 = Autocomplete(sources)
 
   const state$ = model(ac1.value, ac2.value)
 
