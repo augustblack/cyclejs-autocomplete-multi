@@ -12,4 +12,4 @@ Then :
 
 ```npm start```
 
-This starts the webpack dev server. At this point you can open your browser to [http://localhost:8080](http://localhost:3000)
+This starts the webpack dev server. At this point you can open your browser to [http://localhost:8080](http://localhost:8080)
