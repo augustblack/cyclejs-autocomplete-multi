@@ -13,3 +13,5 @@ Then :
 ```npm start```
 
 This starts the webpack dev server. At this point you can open your browser to [http://localhost:8080](http://localhost:8080)
+
+![image](https://cloud.githubusercontent.com/assets/1562570/21455686/9c3c2800-c8df-11e6-8c93-ee2b72b414ac.png)
