@@ -188,9 +188,7 @@ const intent = ({DOM, HTTP, props=xs.of({}) }) => {
     inputBlur$.mapTo(false)
   )
 
-  const acClick$= DOM.select('.acContainer').events('mousedown')
-  .debug("acClick$")
-
+  const acClick$= DOM.select('.acContainer').events('click')
 
   return {
     props$,
@@ -336,6 +334,7 @@ function reducers(actions) {
   })
 
   return xs.merge(
+    acClickReducer$,
     queryReducer$,
     infoReducer$,
     suggestionsReducer$,
