@@ -6,7 +6,7 @@
   <meta name="description" content="Cycle.js example - Autocomplete field with search"/>
   <title>Cycle.js example - Autocomplete field with search</title>
   <style>
-    .acSuggestion, .acSuggestionHide, .acSelection{
+    .acSuggestion, .acSelection{
       list-style-type: none;
     }
     .acContainer, pre {
@@ -14,22 +14,26 @@
       border: 1px solid grey;
       padding: 0.25rem;
       margin: 0.5rem;
+      position: relative;
     }
-    .acSuggestion, .acSuggestionHide {
-      z-index:99;
+    .acSuggestion, .acSuggestionsMore{
+      padding:0.25rem;
       border-top: 1px solid #ccc;
-      border-left: 1px solid #ccc;
-      border-right: 1px solid #ccc;
       cursor: pointer;
-    }
-    .acSuggestionHide {
-      cursor: not-allowed;
     }
     .acSuggestions{
       margin:0rem;
       padding: 0rem;
+      padding-top: 0.25rem;
       overflow: scroll;
       max-height: 200px;
+      position: absolute;
+      left: -1px;
+      background: white;
+      width: 100%;
+      border-bottom: 1px solid grey;
+      border-left: 1px solid grey;
+      border-right: 1px solid grey;
     }
     .acSelections{
       display: inline-block;

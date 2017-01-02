@@ -20,8 +20,6 @@ import {
 } from 'ramda';
 
 
-const HTTP_CAT = 'ac'
-
 /**
  * source: --a--b----c----d---e-f--g----h---i--j-----
  * first:  -------F------------------F---------------
@@ -46,25 +44,51 @@ function notBetween(first, second) {
     first.map(() => source.compose(dropUntil(second))).flatten()
   )
 }
-function httpMap({query,page} ){
-  return	{
-    url: `http://localhost:3000/word/${encodeURI(query)}?page=${page}`,
-    category: HTTP_CAT,
-    progress:true,
+
+function reqMap({query,page} ){
+  return function({urlMap, category}){
+    return{
+      url:urlMap({query,page}),
+      category,
+      progress:true
+    }
   }
 }
 
+function defaultUrlMap({query,page} ){
+  return `http://localhost:3000/word/${encodeURI(query)}?page=${page}`
+}
 
-const intent = ({DOM, HTTP}) => {
+
+const intent = ({DOM, HTTP, props=xs.of({}) }) => {
   const UP_KEYCODE = 38
   const DOWN_KEYCODE = 40
   const ENTER_KEYCODE = 13
   const TAB_KEYCODE = 9
   const DELETE_KEYCODE = 46
 
-  const acClick$ = DOM.select('.acContainer').events('click')
+
+  const props$ = props
+  .map( p => {
+    const tmp = {
+      getPage : ( res ) => { return (res && res.body)? res.body.page : 0;},
+      resFilter : ((res) => { return (res && res.body )}),
+      SuggestionView : ({suggestion}) => (<span>{suggestion.text}</span>),
+      SelectionView : ({selection}) => (<span>{selection.text}</span>),
+      urlMap: defaultUrlMap,
+      category:'ac',
+      resMap : ( res ) => {
+        const val= (res && res.body )?
+        Object.assign({}, res.body, {results:res.body.results.map( r=> { return {id:r, text:r}})} )
+        : {page:0,total:0, results:[] }
+        return val
+      },
+    }
+    return Object.assign({},tmp,p)
+  })
 
   const query$= DOM.select('.acInput').events('input')
+  .compose(debounce(300))//.compose(between(inputFocus$, inputBlur$))
   .filter( ev=> ev && ev.target )
   .map( ev => ev.target.value)
 
@@ -89,7 +113,7 @@ const intent = ({DOM, HTTP}) => {
   const tabPressed$ = inputKeydown$.filter(({keyCode}) => keyCode === TAB_KEYCODE)
   const deletePressed$ = inputKeydown$.filter(({keyCode}) => keyCode === DELETE_KEYCODE)
   const clearField$ = query$.filter( query => query.length === 0)
-  const inputBlurToSelected$ = inputBlur$.compose(between(selectedMouseDown$, selectedMouseUp$))
+
   const inputBlurToSuggestion$ = inputBlur$.compose(between(suggestionMouseDown$, suggestionMouseUp$))
   const inputBlurToElsewhere$ = inputBlur$.compose(notBetween(suggestionMouseDown$, suggestionMouseUp$))
 
@@ -110,57 +134,76 @@ const intent = ({DOM, HTTP}) => {
   })
 
   const keepFocusOnInput$ = xs.merge(inputBlurToSuggestion$, enterPressed$, tabPressed$)
-  const  selectHighlighted$ = xs.merge(suggestionMouseClick$, enterPressed$, tabPressed$)
+  const selectHighlighted$ = xs.merge(suggestionMouseClick$, enterPressed$, tabPressed$)
   .compose(debounce(1))
 
-  const  fetchSuggestions$ = xs.merge(
+  const quitAutocomplete$ = xs.merge(clearField$, inputBlurToElsewhere$)
+
+  const	wantsMore$=DOM.select('.acSuggestion:nth-last-child(-n+2)').events('mouseover')
+
+  // networking Responses
+  const httpSource$ = props$
+  .map( ({category})=> {
+    return HTTP
+    .select( category )
+    .map( (response$) =>{
+      return response$
+      .replaceError( (err) => {
+        const e = { error: err.toString()}
+        if (err.response && err.response.body){
+          e.body = err.response.body
+        }
+        return xs.of(e)
+      })
+    })
+    .flatten()
+  })
+
+  const info$ = httpSource$
+  .flatten()
+  .filter(ev => ev && (ev.error || ev.loaded || ev.percent) )
+  .map( ev => {
+    return printInfo(ev)
+  })
+
+  const httpResponse$ = httpSource$
+  .flatten()
+  .filter(ev => ev && !(ev.error || ev.loaded || ev.percent) )
+
+
+  const	allSuggestions$ = xs.combine( httpResponse$, props$)
+  .filter( ([res,props]) => props.resFilter(res) )
+
+  const httpRespMap = ([res,props]) => props.resMap(res)
+  const	suggestions$ =  allSuggestions$
+  .filter( ([res,props]) => props.getPage(res) === 0 )
+  .map( httpRespMap)
+
+  const	moreSuggestions$ = allSuggestions$
+  .filter( ([res,props]) => props.getPage(res) !== 0 )
+  .map( httpRespMap)
+
+  const fetchSuggestions$ = xs.merge(
     inputFocus$.mapTo(true),
     inputBlur$.mapTo(false)
   )
-  const quitAutocomplete$ = xs.merge(clearField$, inputBlurToElsewhere$)
 
-  // networking Requests
-  const	acReq$ =DOM.select('.acInput').events('input')
-  .compose(debounce(300))//.compose(between(inputFocus$, inputBlur$))
-  .map(ev => { return{query:ev.target.value, page:0}})
-  .filter( ({query,page}) => query.length > 0)
-  .map(httpMap)
-
-  const	acMoreClickReq$ = DOM.select('.acSuggestionsMore').events('click')
-  .map(ev => ev.target.data)
-  .filter(({query,page}) => query.length > 0)
-  .map(httpMap)
-
-  // networking Responses
-  const httpSource$ = HTTP.select(HTTP_CAT)
-  const progress$ = httpSource$
-  .flatten()
-  .filter(ev => ev && (ev.loaded || ev.percent) )
-
-  const	suggestions$ = httpSource$
-  .flatten()
-  .filter(res => res && res.body && res.body.results && res.body.page ===0 )
-  .map( res=> res.body)
-
-  const moreSuggestions$ = httpSource$
-  .flatten()
-  .filter(res => res && res.body && res.body.results && res.body.page !== 0 )
-  .map( res=> res.body)
+  const acClick$= DOM.select('.acContainer').events('mousedown')
+  .debug("acClick$")
 
 
   return {
+    props$,
+
     //networking responses
-    progress$,
+    info$,
     suggestions$,
     moreSuggestions$,
 
-    //networking requests
-    acReq$,
-    //acMoreReq$,
-    acMoreClickReq$,
-
     //UI
+    acClick$,
     query$,
+    wantsMore$,
     moveHighlight$,
     setHighlight$,
     selectedMouseClick$,
@@ -173,19 +216,21 @@ const intent = ({DOM, HTTP}) => {
 
 function reducers(actions) {
 
-  const resMap = (r) =>{
-    return {id:r, full_name:r}
-  }
   const uniqById = uniqWith(eqProps('id'))
+  const defaultState = {
+    selected:null,
+    setFocus:false,
+    removed:null,
+  }
   const mergeState= (state,newState)=> {
-    return Object.assign({}, state, {selected:null, removed:null}, newState)
+    return Object.assign({}, state, defaultState, newState)
   }
 
   function cleanSuggestions( {suggestions, selections} ) {
     return selections.length ?
       suggestions
       .filter( s => findIndex( propEq('id',s.id), selections ) === -1)
-        : suggestions;
+      : suggestions;
   }
 
   const queryReducer$ = actions.query$
@@ -194,51 +239,44 @@ function reducers(actions) {
     return newState
   })
 
-  const isFetchingReducer$ = xs.merge(actions.acReq$, actions.acMoreReq$, actions.acMoreClickReq$)
-  .map( ()=> function setIsFetching(state) {
-    return mergeState( state, { isFetching: true})
+  const acClickReducer$ = actions.acClick$
+  .map( () => function setFocus(state, props) {
+    return mergeState( state, { setFocus:true } )
   })
 
-  const suggestionReducer$ = actions.fetchSuggestions$
-  .map(accepted => {
-    return xs.merge(actions.suggestions$, actions.moreSuggestions$, actions.progress$)
-    .map( json => function setSuggestions(state) {
-      if (json && json.loaded) {
-        return mergeState( state, {
-          progress:	printProgress(json) ,
-          suggestions: json.page === 0 ? [] : state.suggestions,
-        })
-      }
-      else if( json && json.page === 0){
-        const newSuggestions = cleanSuggestions({
-          suggestions: json.results.map( resMap ),
-          selections: state.selections,
-        })
-        return mergeState(state, {
-          suggestions: newSuggestions,
-          progress:null,
-          isFetching:false,
-          page:0,
-          total:parseInt(json.total)
-        })
-      }
-      else if( json && json.page !== 0){
-        const newSuggestions = cleanSuggestions({
-          suggestions: concat(state.suggestions, json.results.map(resMap )),
-          selections: state.selections
-        })
-        return mergeState(state,  {
-          suggestions: newSuggestions,
-          isFetching: false,
-          progress:null,
-          page:json.page,
-          total: parseInt(json.total)
-        })
-      }
+
+  const infoReducer$ = actions.info$
+  .map( info => function setInfo(state, props) {
+    return mergeState( state, { info } )
+  })
+
+  const suggestionsReducer$ = actions.suggestions$
+  .map( json => function setSuggestions(state, props) {
+    const newSuggestions = cleanSuggestions({
+      suggestions: json.results,  //.map( resMap ),
+      selections: state.selections,
+    })
+    return mergeState(state, {
+      suggestions: uniqById(newSuggestions),
+      page:0,
+      info: null,
+      total:parseInt(json.total)
     })
   })
-  .flatten()
 
+  const moreSuggestionsReducer$ = actions.moreSuggestions$
+  .map( json => function setMoreSuggestions(state, props) {
+    const newSuggestions = cleanSuggestions({
+      suggestions: uniqById(concat(state.suggestions, json.results)), //.map(resMap )),
+      selections: state.selections
+    })
+    return mergeState(state,  {
+      suggestions: newSuggestions,
+      page: state.page+1,
+      info: null,
+      total: parseInt(json.total)
+    })
+  })
 
   const moveHighlightReducer$ = actions.moveHighlight$
   .map(delta => function moveHighlightReducer(state) {
@@ -258,7 +296,7 @@ function reducers(actions) {
 
   const hideReducer$ = actions.quitAutocomplete$
   .mapTo(function hideReducer(state) {
-    return mergeState(state, {suggestions: [], total:0})
+    return mergeState(state, {suggestions: [], total:0, info:null})
   })
 
   const selectHighlightedReducer$ = actions.selectHighlighted$
@@ -271,6 +309,7 @@ function reducers(actions) {
       const sel = state.suggestions[state.highlighted]
       return Object.assign({}, state, {
         selected: sel,
+        setFocus: true,
         removed:null,
         selections : uniqById(append(sel, state.selections)),
         suggestions: [],
@@ -288,6 +327,7 @@ function reducers(actions) {
         removed,
         selections : state.selections.filter( s=> s.id !== removed.id),
           selected:null,
+          setFocus: true,
           suggestions: [],
           total:0,
       })
@@ -297,8 +337,9 @@ function reducers(actions) {
 
   return xs.merge(
     queryReducer$,
-    isFetchingReducer$,
-    suggestionReducer$,
+    infoReducer$,
+    suggestionsReducer$,
+    moreSuggestionsReducer$,
     moveHighlightReducer$,
     setHighlightReducer$,
     selectedMouseClickReducer$,
@@ -317,27 +358,31 @@ const model = ( actions) => {
     suggestions:[],
     total:0,
     page:0,
-    isFetching: false,
-    progress:null,
     selected:null,
+    setFocus:false,
     selections:[],
     removed:null,
-    highlighted:null
+    highlighted:null,
+    info:null
   })
 
   return state$
 }
 
-function AutoCompleteSelections({className,selections=[]}) {
+function AutoCompleteSelections({
+  className,
+  selections=[],
+  SelectionView
+}) {
   return (
     <ul className={className}>
     { selections
-      .map( (s, index )=> <li
+      .map( (selection, index )=> <li
            className={"acSelection"}
            >
-           {s.full_name}
+           <SelectionView selection={selection} />
            <span
-           data={ Object.assign({}, s, {index} ) }
+           data={ Object.assign({}, selection, {index} ) }
            index={index.toString()}
            className={"delete"}
            >&#10006;</span></li>
@@ -349,80 +394,98 @@ function AutoCompleteSelections({className,selections=[]}) {
 function AutoCompleteInfoLi ({
   total,
   suggestions,
-  progress,
+  selections,
+  info,
 }){
-  if (progress !== null) {
-    return `Loading... ${progress}`
+  const have = (suggestions.length + selections.length)
+  if (info !== null) {
+    return `info: ${info}`
   }
-  if (total !== suggestions.length ) {
-    return `${total - suggestions.length } more..`
+  if (total > 0 && total > have ) {
+    return `${total - have} more..`
   }
   return null
 }
 
 function AutoCompleteSuggestions ({
   className,
-  progress,
+  info,
   total,
   suggestions=[],
-    highlighted,
+  selections=[],
+  highlighted,
+  SuggestionView
 }) {
-  const info = AutoCompleteInfoLi({total,suggestions,progress})
+  const infoEl = AutoCompleteInfoLi({total,suggestions,selections,info})
   return (
-    <ul className={className}>
+    <ul className={className} style={suggestions.length ? {zIndex:100}: {}} >
     {  suggestions
       .map( (suggestion, index)=> <li
            data={ Object.assign({},suggestion, {index}) }
            index={index.toString()}
-           className={`${ suggestion.hide ? 'acSuggestionHide' : 'acSuggestion' } ${highlighted===index ? 'highlighted':''}`}
-           >{suggestion.full_name}</li>
+           className={`acSuggestion ${highlighted===index ? 'highlighted':''}`}
+           ><SuggestionView suggestion={suggestion} /></li>
           )
     }
-    { info? <li className={className+ "More"}>{info}</li>:""}
+    { infoEl? <li className={className+ "More"}>{infoEl}</li>:""}
     </ul>
   )
 }
 
-const printProgress = (p) =>{
-  if (p.loaded && p.total > 0) {
-    return `${parseInt(p.loaded/p.total*100)}%`
+const printInfo = (p) =>{
+  if (p.percent) {
+    return `Loading ... ${p.percent}%`
+  }
+  else if (p.loaded && p.total > 0) {
+    return `Loading ... ${parseInt(p.loaded/p.total*100)}%`
   }
   else if (p.loaded) {
-    return `Loading ..`
+    return `Loading ... ${p.loaded} bytes`
   }
-  else {
-    return ""
+  else if (p.error && p.body && p.body.message) {
+    return p.body.message
   }
+  else if (p.error) {
+    return p.error
+  }
+  return null
 }
 
-const view = (state$) => {
-  return state$
-  .map( ({
+const view = (state$, props$) => {
+  return xs.combine(state$, props$)
+  .map( ([{
     suggestions=[],
-      total=0,
-        selections=[],
-          highlighted=null,
-            selected=null,
-              progress=null
-  }) =>{
+    total=0,
+    selections=[],
+    highlighted=null,
+    selected=null,
+    setFocus=false,
+    info=null
+  },{
+    SuggestionView,
+    SelectionView
+  }]) =>{
     return (
       <div className="acContainer">
       <AutoCompleteSelections
       className="acSelections"
       selections={ selections }
+      SelectionView={ SelectionView }
       />
       <input
       className="acInput"
       type="text"
       placeholder="Please type..."
-      hook={ { update: (old,{elm})=>{ if (selected) { elm.value="", elm.focus()} } }}
+      hook={ { update: (old,{elm})=>{ if (setFocus) { elm.value= (selected ? "": elm.value), elm.focus()} } }}
       />
       <AutoCompleteSuggestions
       className="acSuggestions"
-      progress= {progress}
+      info= {info}
       total= {total}
       suggestions={ suggestions }
+      selections={ selections }
       highlighted={ highlighted}
+      SuggestionView={SuggestionView}
       />
       </div>
     );
@@ -447,36 +510,40 @@ function preventedEvents(actions, state$) {
 }
 
 const main =(sources) => {
-  const acMoreReqProxy$= xs.create();
-
-  const actions = Object.assign(
-    {},
-    intent(sources),
-    {acMoreReq$: acMoreReqProxy$}
-  );
-
+  const actions =  intent(sources);
   const state$ = model(actions)
 
-  const acMoreReq$ = state$
-  .filter( state => {
-    if (state.isFetching ||state.suggestions.length===0 || state.total === 0){
-      return false
-    }
-    return (state.suggestions.length - state.highlighted  < 3)
+  const wantsMore$ = actions.wantsMore$
+  .map( (wm )=> {
+    return state$
+    .filter( ({suggestions, selections, total}) =>{
+      if( (suggestions.length + selections.length) >= total)
+       return false
+     return true
+    })
+    .take(1)
+    .map( (state) => {
+      return {query: state.query, page:state.page+1}
+    })
   })
-  .map( state=>{ return { page: state.page+1, query: state.query}})
-  .map(httpMap)
+  .flatten()
 
-  acMoreReqProxy$.imitate(acMoreReq$)
+  const wantsSuggestions$ = actions.query$
+  .filter( (query) => query.length >1 )
+  .map( (query) =>{
+    return {query, page:0}
+  })
 
-  const httpReq$ = xs.merge(actions.acReq$, actions.acMoreReq$, actions.acMoreClickReq$)
+  const httpReq$ = xs.merge(wantsSuggestions$, wantsMore$)
+  .map( ({query,page}) => actions.props$.map( reqMap({query,page})))
+  .flatten()
 
-  const vtree$ = view(state$)
+  const vtree$ = view(state$, actions.props$)
   return {
     DOM: vtree$,
     HTTP: httpReq$,
     value: state$.map( s => s.selections),
-      preventDefault: preventedEvents(actions, state$)
+    preventDefault: preventedEvents(actions, state$)
   }
 };
 
