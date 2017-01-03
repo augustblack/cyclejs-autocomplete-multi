@@ -59,16 +59,8 @@ function defaultUrlMap({query,page} ){
   return `http://localhost:3000/word/${encodeURI(query)}?page=${page}`
 }
 
-
-const intent = ({DOM, HTTP, props=xs.of({}) }) => {
-  const UP_KEYCODE = 38
-  const DOWN_KEYCODE = 40
-  const ENTER_KEYCODE = 13
-  const TAB_KEYCODE = 9
-  const DELETE_KEYCODE = 46
-
-
-  const props$ = props
+function defaultProps( { props=xs.of({}) } ) {
+  return props
   .map( p => {
     const tmp = {
       getPage : ( res ) => { return (res && res.body)? res.body.page : 0;},
@@ -86,6 +78,15 @@ const intent = ({DOM, HTTP, props=xs.of({}) }) => {
     }
     return Object.assign({},tmp,p)
   })
+}
+
+
+const intent = ({DOM, HTTP }, props$ ) => {
+  const UP_KEYCODE = 38
+  const DOWN_KEYCODE = 40
+  const ENTER_KEYCODE = 13
+  const TAB_KEYCODE = 9
+  const DELETE_KEYCODE = 46
 
   const query$= DOM.select('.acInput').events('input')
   .compose(debounce(300))//.compose(between(inputFocus$, inputBlur$))
@@ -133,7 +134,6 @@ const intent = ({DOM, HTTP, props=xs.of({}) }) => {
     return ev.target.data.index
   })
 
-  const keepFocusOnInput$ = xs.merge(inputBlurToSuggestion$, enterPressed$, tabPressed$)
   const selectHighlighted$ = xs.merge(suggestionMouseClick$, enterPressed$, tabPressed$)
   .compose(debounce(1))
 
@@ -183,15 +183,9 @@ const intent = ({DOM, HTTP, props=xs.of({}) }) => {
   .filter( ([res,props]) => props.getPage(res) !== 0 )
   .map( httpRespMap)
 
-  const fetchSuggestions$ = xs.merge(
-    inputFocus$.mapTo(true),
-    inputBlur$.mapTo(false)
-  )
-
   const acClick$= DOM.select('.acContainer').events('click')
 
   return {
-    props$,
 
     //networking responses
     info$,
@@ -205,9 +199,7 @@ const intent = ({DOM, HTTP, props=xs.of({}) }) => {
     moveHighlight$,
     setHighlight$,
     selectedMouseClick$,
-    keepFocusOnInput$,
     selectHighlighted$,
-    fetchSuggestions$,
     quitAutocomplete$,
   }
 };
@@ -347,7 +339,7 @@ function reducers(actions) {
   )
 }
 
-const model = ( actions) => {
+const model = ( actions ) => {
 
   const reducer$ = reducers( actions )
 
@@ -417,7 +409,7 @@ function AutoCompleteSuggestions ({
 }) {
   const infoEl = AutoCompleteInfoLi({total,suggestions,selections,info})
   return (
-    <ul className={className} style={suggestions.length ? {zIndex:100}: {}} >
+    <ul className={className} style={suggestions.length ? {zIndex:100}: { display:"none", visibility:"hidden"}} >
     {  suggestions
       .map( (suggestion, index)=> <li
            data={ Object.assign({},suggestion, {index}) }
@@ -492,26 +484,16 @@ const view = (state$, props$) => {
 }
 
 
-function preventedEvents(actions, state$) {
-  return state$
-  .map(state =>
-       actions.keepFocusOnInput$.map(event => {
-         if (state.suggestions.length > 0
-             && state.highlighted !== null) {
-               return event
-             } else {
-               return null
-             }
-       })
-      )
-      .flatten()
-      .filter(ev => ev !== null)
-}
-
 const main =(sources) => {
-  const actions =  intent(sources);
+
+  const props$ = defaultProps(sources)
+
+  const actions =  intent(sources, props$);
   const state$ = model(actions)
 
+  const vtree$ = view(state$, props$)
+
+  //networking requests
   const wantsMore$ = actions.wantsMore$
   .map( (wm )=> {
     return state$
@@ -534,15 +516,13 @@ const main =(sources) => {
   })
 
   const httpReq$ = xs.merge(wantsSuggestions$, wantsMore$)
-  .map( ({query,page}) => actions.props$.map( reqMap({query,page})))
+  .map( ({query,page}) => props$.map( reqMap({query,page})))
   .flatten()
 
-  const vtree$ = view(state$, actions.props$)
   return {
     DOM: vtree$,
     HTTP: httpReq$,
     value: state$.map( s => s.selections),
-    preventDefault: preventedEvents(actions, state$)
   }
 };
 
