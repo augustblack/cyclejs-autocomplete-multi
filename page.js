@@ -2,30 +2,32 @@ import Cycle from '@cycle/xstream-run';
 import xs from 'xstream';
 import {div, pre } from '@cycle/dom';
 import {html} from 'snabbdom-jsx';
-import Autocomplete from './autocomplete';
+import AutocompleteHttp from './autocompleteHttp';
+import AutocompleteStatic from './autocompleteStatic';
 
 
-const model = (ac1$, ac2$) =>  {
-  return xs.combine(ac1$, ac2$)
-  .map( ([ac1,ac2]) => {
-    return {ac1,ac2};
+const model = (ac1$, ac2$, ac3$) =>  {
+  return xs.combine(ac1$, ac2$, ac3$)
+  .map( ([ac1,ac2, ac3]) => {
+    return {ac1,ac2, ac3};
   });
 }
 
-const view = (state$, ac1DOM, ac2DOM) =>  {
-  return xs.combine( state$,ac1DOM, ac2DOM)
-  .map( ([state, ac1vtree, ac2vtree]) =>{
+const view = (state$, ac1DOM, ac2DOM, ac3DOM) =>  {
+  return xs.combine( state$,ac1DOM, ac2DOM, ac3DOM)
+  .map( ([state, ac1vtree, ac2vtree, ac3vtree]) =>{
     return div([
       ac1vtree,
       ac2vtree,
+      ac3vtree,
       pre(JSON.stringify(state, null,2))
     ])
   })
 }
 
 const main = ( sources ) =>{
-  const ac1 = Autocomplete(sources)
-  const ac2 = Autocomplete({ props:xs.of({
+  const ac1 = AutocompleteHttp(sources)
+  const ac2 = AutocompleteHttp({ props:xs.of({
     urlMap: ({query,page})=>{
       return  `https://api.github.com/search/repositories?q=${encodeURI(query)}&page=${page}`
     },
@@ -46,7 +48,6 @@ const main = ( sources ) =>{
      if( res && res.request && res.request.url){
        const reg= /page=(\d+)/
        const page= res.request.url.match(reg)[1]
-       console.log("page",page)
        return parseInt(page)
      }
      return 0
@@ -55,14 +56,23 @@ const main = ( sources ) =>{
     SelectionView : ({selection}) => (<span>{selection.full_name}</span>),
   }), ...sources})
 
-  const state$ = model(ac1.value, ac2.value)
+  const ac3 = AutocompleteStatic({ props:xs.of({
+    suggestions: [
+      {id:1, text:"hello"},
+      {id:2, text:"blah"},
+      {id:3, text:"blahblo"}
+    ]
+  }),
+  ...sources })
 
-  const vtree$ = view(state$, ac1.DOM, ac2.DOM)
+  const state$ = model(ac1.value, ac2.value, ac3.value)
+
+  const vtree$ = view(state$, ac1.DOM, ac2.DOM, ac3.DOM)
 
   return {
     DOM: vtree$,
     value: state$,
-    HTTP: xs.merge(ac1.HTTP, ac2.HTTP),
+    HTTP: xs.merge(ac1.HTTP, ac2.HTTP)
   }
 
 }

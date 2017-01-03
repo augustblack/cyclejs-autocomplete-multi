@@ -45,43 +45,9 @@ function notBetween(first, second) {
   )
 }
 
-function reqMap({query,page} ){
-  return function({urlMap, category}){
-    return{
-      url:urlMap({query,page}),
-      category,
-      progress:true
-    }
-  }
-}
-
-function defaultUrlMap({query,page} ){
-  return `http://localhost:3000/word/${encodeURI(query)}?page=${page}`
-}
-
-function defaultProps( { props=xs.of({}) } ) {
-  return props
-  .map( p => {
-    const tmp = {
-      getPage : ( res ) => { return (res && res.body)? res.body.page : 0;},
-      resFilter : ((res) => { return (res && res.body )}),
-      SuggestionView : ({suggestion}) => (<span>{suggestion.text}</span>),
-      SelectionView : ({selection}) => (<span>{selection.text}</span>),
-      urlMap: defaultUrlMap,
-      category:'ac',
-      resMap : ( res ) => {
-        const val= (res && res.body )?
-        Object.assign({}, res.body, {results:res.body.results.map( r=> { return {id:r, text:r}})} )
-        : {page:0,total:0, results:[] }
-        return val
-      },
-    }
-    return Object.assign({},tmp,p)
-  })
-}
 
 
-const intent = ({DOM, HTTP }, props$ ) => {
+export function intent ({DOM }, props$ ) {
   const UP_KEYCODE = 38
   const DOWN_KEYCODE = 40
   const ENTER_KEYCODE = 13
@@ -141,61 +107,13 @@ const intent = ({DOM, HTTP }, props$ ) => {
 
   const	wantsMore$=DOM.select('.acSuggestion:nth-last-child(-n+2)').events('mouseover')
 
-  // networking Responses
-  const httpSource$ = props$
-  .map( ({category})=> {
-    return HTTP
-    .select( category )
-    .map( (response$) =>{
-      return response$
-      .replaceError( (err) => {
-        const e = { error: err.toString()}
-        if (err.response && err.response.body){
-          e.body = err.response.body
-        }
-        return xs.of(e)
-      })
-    })
-    .flatten()
-  })
-
-  const info$ = httpSource$
-  .flatten()
-  .filter(ev => ev && (ev.error || ev.loaded || ev.percent) )
-  .map( ev => {
-    return printInfo(ev)
-  })
-
-  const httpResponse$ = httpSource$
-  .flatten()
-  .filter(ev => ev && !(ev.error || ev.loaded || ev.percent) )
-
-
-  const	allSuggestions$ = xs.combine( httpResponse$, props$)
-  .filter( ([res,props]) => props.resFilter(res) )
-
-  const httpRespMap = ([res,props]) => props.resMap(res)
-  const	suggestions$ =  allSuggestions$
-  .filter( ([res,props]) => props.getPage(res) === 0 )
-  .map( httpRespMap)
-
-  const	moreSuggestions$ = allSuggestions$
-  .filter( ([res,props]) => props.getPage(res) !== 0 )
-  .map( httpRespMap)
-
   const acClick$= DOM.select('.acContainer').events('click')
 
   return {
-
-    //networking responses
-    info$,
-    suggestions$,
-    moreSuggestions$,
-
     //UI
     acClick$,
-    query$,
     wantsMore$,
+    query$,
     moveHighlight$,
     setHighlight$,
     selectedMouseClick$,
@@ -339,7 +257,7 @@ function reducers(actions) {
   )
 }
 
-const model = ( actions ) => {
+export function model ( actions ) {
 
   const reducer$ = reducers( actions )
 
@@ -423,26 +341,7 @@ function AutoCompleteSuggestions ({
   )
 }
 
-const printInfo = (p) =>{
-  if (p.percent) {
-    return `Loading ... ${p.percent}%`
-  }
-  else if (p.loaded && p.total > 0) {
-    return `Loading ... ${parseInt(p.loaded/p.total*100)}%`
-  }
-  else if (p.loaded) {
-    return `Loading ... ${p.loaded} bytes`
-  }
-  else if (p.error && p.body && p.body.message) {
-    return p.body.message
-  }
-  else if (p.error) {
-    return p.error
-  }
-  return null
-}
-
-const view = (state$, props$) => {
+export function view (state$, props$) {
   return xs.combine(state$, props$)
   .map( ([{
     suggestions=[],
@@ -486,43 +385,21 @@ const view = (state$, props$) => {
 
 const main =(sources) => {
 
-  const props$ = defaultProps(sources)
+  const props$ = sources.props
 
-  const actions =  intent(sources, props$);
-  const state$ = model(actions)
+  const actions = intent(sources, props$)
+
+  const state$ = model( merge(actions, sources.actions) )
 
   const vtree$ = view(state$, props$)
 
-  //networking requests
-  const wantsMore$ = actions.wantsMore$
-  .map( (wm )=> {
-    return state$
-    .filter( ({suggestions, selections, total}) =>{
-      if( (suggestions.length + selections.length) >= total)
-       return false
-     return true
-    })
-    .take(1)
-    .map( (state) => {
-      return {query: state.query, page:state.page+1}
-    })
-  })
-  .flatten()
-
-  const wantsSuggestions$ = actions.query$
-  .filter( (query) => query.length >1 )
-  .map( (query) =>{
-    return {query, page:0}
-  })
-
-  const httpReq$ = xs.merge(wantsSuggestions$, wantsMore$)
-  .map( ({query,page}) => props$.map( reqMap({query,page})))
-  .flatten()
-
   return {
     DOM: vtree$,
-    HTTP: httpReq$,
-    value: state$.map( s => s.selections),
+    value: {
+      wantsMore$:actions.wantsMore$,
+      query$: actions.query$,
+      state$
+    }
   }
 };
 
