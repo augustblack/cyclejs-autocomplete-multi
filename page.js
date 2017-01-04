@@ -6,20 +6,21 @@ import AutocompleteHttp from './autocompleteHttp';
 import AutocompleteStatic from './autocompleteStatic';
 
 
-const model = (ac1$, ac2$, ac3$) =>  {
-  return xs.combine(ac1$, ac2$, ac3$)
-  .map( ([ac1,ac2, ac3]) => {
-    return {ac1,ac2, ac3};
+const model = (ac1$, ac2$, ac3$, ac4$) =>  {
+  return xs.combine(ac1$, ac2$, ac3$, ac4$)
+  .map( ([ac1,ac2, ac3, ac4]) => {
+    return {ac1,ac2, ac3, ac4};
   });
 }
 
-const view = (state$, ac1DOM, ac2DOM, ac3DOM) =>  {
-  return xs.combine( state$,ac1DOM, ac2DOM, ac3DOM)
-  .map( ([state, ac1vtree, ac2vtree, ac3vtree]) =>{
+const view = (state$, ac1DOM, ac2DOM, ac3DOM, ac4DOM) =>  {
+  return xs.combine( state$,ac1DOM, ac2DOM, ac3DOM, ac4DOM)
+  .map( ([state, ac1vtree, ac2vtree, ac3vtree, ac4vtree]) =>{
     return div([
       ac1vtree,
       ac2vtree,
       ac3vtree,
+      ac4vtree,
       pre(JSON.stringify(state, null,2))
     ])
   })
@@ -65,9 +66,27 @@ const main = ( sources ) =>{
   }),
   ...sources })
 
-  const state$ = model(ac1.value, ac2.value, ac3.value)
+  const ac4 = AutocompleteStatic({ props:xs.of({
+    suggestions: [
+      {id:"aa", label:"Joe"},
+      {id:"www", label:"John"},
+      {id:"ddddaa", label:"John"},
+      {id:"wwwdda", label:"Denver"}
+    ],
+    SuggestionView : ({suggestion}) => (<span>{suggestion.label} : {suggestion.id} </span>),
+    SelectionView : ({selection}) => (<span>{selection.label}</span>),
+    mapSuggestions: (query, suggestions) => {
+      const reg= new RegExp(query, "i")
+      return suggestions
+      .filter ( s  => (s.label.match(reg)  || s.id.match(reg) ))
+    }
+  }),
+  ...sources })
 
-  const vtree$ = view(state$, ac1.DOM, ac2.DOM, ac3.DOM)
+
+  const state$ = model(ac1.value, ac2.value, ac3.value, ac4.value)
+
+  const vtree$ = view(state$, ac1.DOM, ac2.DOM, ac3.DOM, ac4.DOM)
 
   return {
     DOM: vtree$,

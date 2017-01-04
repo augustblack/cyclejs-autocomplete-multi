@@ -25,7 +25,12 @@ function defaultProps( props=xs.of({}) ) {
       getPage : ( res ) => { return 0 },
       SuggestionView : ({suggestion}) => (<span>{suggestion.text}</span>),
       SelectionView : ({selection}) => (<span>{selection.text}</span>),
-      suggestions: []
+      suggestions: [],
+      mapSuggestions: (query, suggestions) => {
+        const reg= new RegExp(query, "i")
+        return suggestions
+        .filter ( s  => (s.text.match(reg) !== null))
+      }
     }
     return Object.assign({},tmp,p)
   })
@@ -46,18 +51,14 @@ const main =(sources) => {
     props: props$,
     actions
   })
+  const uniqById = uniqWith(eqProps('id'))
 
   const suggestions$ = ac.value.query$
   .map( (query)=> {
-    return props$.map( ({suggestions}) =>{
-      const reg= new RegExp(query, "i")
-      return suggestions
-      .filter( s => {
-        return (s.text.match(reg) !== null)
-      })
+    return props$.map( ({suggestions, mapSuggestions}) =>{
+      return mapSuggestions(query, suggestions)
     })
     .map( suggestions =>{
-      const uniqById = uniqWith(eqProps('id'))
       return {
         total: suggestions.length,
         page:0,
